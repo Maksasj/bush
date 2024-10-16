@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.glsl": "hlsl",
+        "*.hn": "hypnode",
+        "unistd.h": "c"
+    }
+}
