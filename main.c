@@ -11,8 +11,8 @@ int main() {
     pid_t id = fork();
 
     if(id == 0) {
-        close(STDOUT_FILENO);
-        dup(p[1]); 
+        close(STDOUT_FILENO); // fd is 1
+        dup(p[1]); // chooses lowest available fd, this is 1 so it uses p[1] it as stdout 
 
         // Child
         char* args[] = { "echo", "Hello wllld\n", NULL };
