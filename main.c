@@ -8,10 +8,16 @@
 #include "haul/haul.h"
 
 typedef int fd_t;
-typedef int fd_pair_t[2];
 
-void execute_command(char** cmd, fd_t in_fd, fd_t out_fd) {
-    if (fork() == 0) {
+typedef struct {
+    fd_t read;
+    fd_t write;
+} pipe_t;
+
+pid_t execute_command(char** cmd, fd_t in_fd, fd_t out_fd) {
+    pid_t id = fork();
+
+    if (id == 0) {
         if (in_fd != -1) {
             dup2(in_fd, STDIN_FILENO);
             close(in_fd);
@@ -26,134 +32,98 @@ void execute_command(char** cmd, fd_t in_fd, fd_t out_fd) {
         perror("execvp failed");
         exit(1);
     }
+
+    return id;
+}
+
+void split_by_delim(vector_t* vector, char* string, char* delim) {
+    char *token = strtok(string, delim);
+    while (token != NULL) {
+        vector_push(vector, token);
+
+        token = strtok(NULL, delim);
+    }
 }
 
 int main() {
     // Parse commands
     char line[] = "wget -q -O - https://en.wikipedia.org/wiki/Unix | grep -o -P (?<=href=\")http[^\"]* | cat -n";
 
-    queue_t commands;
-    create_queue(&commands, 10);
+    vector_t commands;
+    create_vector(&commands, 10);
+    split_by_delim(&commands, line, "|");
 
-    char *token = strtok(line, "|");
-    while (token != NULL) {
-        queue_push(&commands, token);
+    // Create all pipes
+    vector_t pipes;
+    create_vector(&pipes, 10);
 
-        token = strtok(NULL, "|");
-    }
+    for(int i = 0; i < (vector_size(&commands) - 1); ++i) {
+        pipe_t* p = (pipe_t*) malloc(sizeof(pipe_t));
 
-    // Create pipes for each process
-    // queue_t pipes;
-    // create_queue(&pipes, 10);
-
-    fd_pair_t p0;
-    fd_pair_t p1;
-
-    if(pipe(p0) < 0)
-        fprintf(stderr, "Failed to create pipe");
-
-    if(pipe(p1) < 0)
-        fprintf(stderr, "Failed to create pipe");
-
-    pid_t id0;
-    {
-        char* command = (char*) queue_get(&commands, 0);
-
-        printf("Parsed command: %s\n", command);
-
-        token = strtok(command, " ");
-
-        queue_t args;
-        create_queue(&args, 10);
-
-        while (token != NULL) {
-            printf("    Parsed argument: %s\n", token);
-            queue_push(&args, token);
-            token = strtok(NULL, " ");
-        }
-
-        queue_push(&args, NULL);
-
-        char** argv = (char**) args.items;
-        execute_command(argv, -1, p0[1]);
-
-        close(p0[1]);
-    }
-
-    pid_t id1;
-    {
-        char* command = (char*) queue_get(&commands, 1);
-
-        printf("Parsed command: %s\n", command);
-
-        token = strtok(command, " ");
-
-        queue_t args;
-        create_queue(&args, 10);
-
-        while (token != NULL) {
-            printf("    Parsed argument: %s\n", token);
-            queue_push(&args, token);
-            token = strtok(NULL, " ");
-        }
-
-        queue_push(&args, NULL);
-
-        char** argv = (char**) args.items;
-        execute_command(argv, p0[0], p1[1]);
-
-        close(p0[0]);
-        close(p1[1]);
-    }
-
-    pid_t id2;
-    {
-    // for(int i = 1; i < (queue_size(&commands) - 1); ++i) {
-        char* command = (char*) queue_get(&commands, 2);
-
-        printf("Parsed command: %s\n", command);
-
-        token = strtok(command, " ");
-
-        queue_t args;
-        create_queue(&args, 10);
-
-        while (token != NULL) {
-            printf("    Parsed argument: %s\n", token);
-            queue_push(&args, token);
-            token = strtok(NULL, " ");
-        }
-
-        queue_push(&args, NULL);
-
-        char** argv = (char**) args.items;
-        execute_command(argv, p1[0], -1);
-
-        close(p1[0]);
-    }
-
-    printf("Marker\n");
-
-    int status;
-    waitpid(id0, &status, 0); // Wait child process to exit
-
-    if(!WIFEXITED(status))
-        fprintf(stderr, "Child processes terminated abnormally\n");
-
-    printf("Marker 1\n");
-    waitpid(id1, &status, 0); // Wait child process to exit
-
-    if(!WIFEXITED(status))
-        fprintf(stderr, "Child processes terminated abnormally\n");
+        if(pipe((int*) p) < 0)
+            fprintf(stderr, "Failed to create pipe");
             
-    printf("Marker 2\n");
+        vector_push(&pipes, p);
+    }
+    
+    vector_t processes;
+    create_vector(&processes, 10);
 
-    waitpid(id2, &status, 0); // Wait child process to exit
+    for(int i = 0; i < vector_size(&commands); ++i) {
+        char* command = (char*) vector_get(&commands, i);
 
-    if(!WIFEXITED(status))
-        fprintf(stderr, "Child processes terminated abnormally\n");
+        // Get arguments
+        vector_t args;
+        create_vector(&args, 10);
+        split_by_delim(&args, command, " ");
+        vector_push(&args, NULL);
 
-    printf("Parent exited\n");
+        fd_t in_fd = -1;
+        fd_t out_fd = -1; 
+
+        if(i > 0) {
+            pipe_t p = *((pipe_t*) vector_get(&pipes, i - 1));
+            in_fd = p.read;
+        }
+
+        if(i + 1 != vector_size(&commands)) {
+            pipe_t p = *((pipe_t*) vector_get(&pipes, i));
+            out_fd = p.write;
+        }
+
+        pid_t* id = (pid_t*) malloc(sizeof(pid_t));
+        *id = execute_command((char**) args.items, in_fd, out_fd);
+        vector_push(&processes, id);
+
+        if(in_fd != -1)
+            close(in_fd);
+
+        if(out_fd != -1)
+            close(out_fd);
+
+        // free_vector_content(&args); need to free but later
+        free_vector(&args);
+    }
+
+    // Wait child process to exit
+    for(int i = 0; i < vector_size(&processes); ++i) {
+        pid_t* id = (pid_t*) vector_get(&processes, i);
+
+        int status;
+        waitpid(*id, &status, 0); 
+
+        if(!WIFEXITED(status))
+            fprintf(stderr, "Child processes terminated abnormally\n");
+    }
+
+    free_vector_content(&processes);
+    free_vector(&processes);
+
+    free_vector_content(&pipes);
+    free_vector(&pipes);
+
+    // free_vector_content(&commands); need to free but later
+    free_vector(&commands);
 
     return 0;
 }
