@@ -7,6 +7,9 @@
 #define HAUL_IMPLEMENTATION
 #include "haul/haul.h"
 
+// Utils
+void split_by_delim(vector_t* vector, char* string, char* delim);
+
 typedef int fd_t;
 
 typedef struct {
@@ -14,7 +17,99 @@ typedef struct {
     fd_t write;
 } pipe_t;
 
+typedef void (commad_callback_t)(char**, fd_t, fd_t);
+
+typedef struct {
+    char* keyword;
+    commad_callback_t* callback;
+} command_t;
+
+command_t* is_build_in_command(char* cmd);
+
+void exit_command_callback(char** cmd, fd_t in_fd, fd_t out_fd);
+void cd_command_callback(char** cmd, fd_t in_fd, fd_t out_fd);
+
+static command_t build_in_commands[] = {
+    (command_t) { .keyword = "exit", .callback = &exit_command_callback },
+    (command_t) { .keyword = "cd", .callback = &cd_command_callback }
+};
+
+pid_t execute_command(char** cmd, fd_t in_fd, fd_t out_fd);
+void execute_line(char* line);
+
+int main(int argc, char *argv[]) {
+    FILE *stream = stdin;
+
+    if(argc >= 2)
+        stream = fopen(argv[1], "r");
+
+    if(stream == NULL) {
+        fprintf(stderr, "ERROR: Failed to open '%s' file\n", argv[1]);
+        return 1;
+    }
+
+    char *line = NULL;
+    size_t size;
+    ssize_t read;
+
+    while (1) {
+        if(stream == stdin)
+            printf("$ ");
+        
+        if((read = getline(&line, &size, stream)) == -1)
+            break;
+
+        line[read - 1] = '\0'; // Get rid of new line character
+        execute_line(line);
+    }
+
+    if(line != NULL)
+        free(line);
+
+    if(argc > 2)
+        fclose(stream);
+
+    return 0;
+}
+
+void split_by_delim(vector_t* vector, char* string, char* delim) {
+    char *token = strtok(string, delim);
+    while (token != NULL) {
+        vector_push(vector, token);
+
+        token = strtok(NULL, delim);
+    }
+}
+
+command_t* is_build_in_command(char* cmd) {
+    const int length = sizeof(build_in_commands) / sizeof(command_t);
+
+    for(int i = 0; i < length; ++i) {
+        command_t* command = &build_in_commands[i];
+
+        if(strcmp(command->keyword, cmd) == 0)
+            return command;
+    }
+
+    return NULL;
+}
+
+void exit_command_callback(char** cmd, fd_t in_fd, fd_t out_fd) {
+    exit(EXIT_SUCCESS); 
+}
+
+void cd_command_callback(char** cmd, fd_t in_fd, fd_t out_fd) {
+    if(chdir(cmd[1]) != 0)
+        fprintf(stderr, "ERROR: No such file or directory");
+}
+
 pid_t execute_command(char** cmd, fd_t in_fd, fd_t out_fd) {
+    command_t* command = NULL;
+    if((command = is_build_in_command(cmd[0])) != NULL) {
+        (*command->callback)(cmd, in_fd, out_fd);
+        return 0;
+    }
+
     pid_t id = fork();
 
     if (id == 0) {
@@ -29,26 +124,14 @@ pid_t execute_command(char** cmd, fd_t in_fd, fd_t out_fd) {
         }
 
         execvp(cmd[0], cmd);
-        perror("execvp failed");
+        fprintf(stderr, "Command '%s' not found (execvp failed)\n", cmd[0]);
         exit(1);
     }
 
     return id;
 }
 
-void split_by_delim(vector_t* vector, char* string, char* delim) {
-    char *token = strtok(string, delim);
-    while (token != NULL) {
-        vector_push(vector, token);
-
-        token = strtok(NULL, delim);
-    }
-}
-
-int main() {
-    // Parse commands
-    char line[] = "wget -q -O - https://en.wikipedia.org/wiki/Unix | grep -o -P (?<=href=\")http[^\"]* | cat -n";
-
+void execute_line(char* line) {
     vector_t commands;
     create_vector(&commands, 10);
     split_by_delim(&commands, line, "|");
@@ -109,7 +192,10 @@ int main() {
     for(int i = 0; i < vector_size(&processes); ++i) {
         pid_t* id = (pid_t*) vector_get(&processes, i);
 
-        int status;
+        if(*id == 0)
+            continue;
+
+        int status; 
         waitpid(*id, &status, 0); 
 
         if(!WIFEXITED(status))
@@ -124,6 +210,4 @@ int main() {
 
     // free_vector_content(&commands); need to free but later
     free_vector(&commands);
-
-    return 0;
 }

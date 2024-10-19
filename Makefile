@@ -16,3 +16,6 @@ clean:
 
 execute:
 	./$(EXE)
+
+execute_with_params:
+	./$(EXE) script.sh
