@@ -37,9 +37,10 @@ static command_t build_in_commands[] = {
 pid_t execute_command(char** cmd, fd_t in_fd, fd_t out_fd);
 void execute_line(char* line);
 
+// bush entrypoint
 int main(int argc, char *argv[]) {
     FILE *stream = stdin;
-
+    
     if(argc >= 2)
         stream = fopen(argv[1], "r");
 
@@ -52,17 +53,22 @@ int main(int argc, char *argv[]) {
     size_t size;
     ssize_t read;
 
+    // read input line by line and process
     while (1) {
+        // if we running in terminal lets have '$' sign as our keyword
         if(stream == stdin)
             printf("$ ");
         
+        // get line from stream
         if((read = getline(&line, &size, stream)) == -1)
             break;
 
-        line[read - 1] = '\0'; // Get rid of new line character
+        // process and execute line
+        line[read - 1] = '\0'; // get rid of new line character
         execute_line(line);
     }
-
+ 
+    // cleanup
     if(line != NULL)
         free(line);
 
@@ -72,8 +78,10 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
+// split string by delimiter and put into a vector
 void split_by_delim(vector_t* vector, char* string, char* delim) {
     char *token = strtok(string, delim);
+
     while (token != NULL) {
         vector_push(vector, token);
 
@@ -81,6 +89,7 @@ void split_by_delim(vector_t* vector, char* string, char* delim) {
     }
 }
 
+// check if command is build in
 command_t* is_build_in_command(char* cmd) {
     const int length = sizeof(build_in_commands) / sizeof(command_t);
 
@@ -94,35 +103,44 @@ command_t* is_build_in_command(char* cmd) {
     return NULL;
 }
 
+// build in exit command callback
 void exit_command_callback(char** cmd, fd_t in_fd, fd_t out_fd) {
     exit(EXIT_SUCCESS); 
 }
 
+// build in cd command callback
 void cd_command_callback(char** cmd, fd_t in_fd, fd_t out_fd) {
     if(chdir(cmd[1]) != 0)
         fprintf(stderr, "ERROR: No such file or directory");
 }
 
+// execute command
 pid_t execute_command(char** cmd, fd_t in_fd, fd_t out_fd) {
     command_t* command = NULL;
+
+    // check if this is a build in command, and if yes execute callback
     if((command = is_build_in_command(cmd[0])) != NULL) {
         (*command->callback)(cmd, in_fd, out_fd);
         return 0;
     }
 
+    // craete child process
     pid_t id = fork();
 
     if (id == 0) {
+        // setup child process stdin
         if (in_fd != -1) {
             dup2(in_fd, STDIN_FILENO);
             close(in_fd);
         }
 
+        // setup child process stdout
         if (out_fd != -1) {
             dup2(out_fd, STDOUT_FILENO);
             close(out_fd);
         }
 
+        // run command
         execvp(cmd[0], cmd);
         fprintf(stderr, "Command '%s' not found (execvp failed)\n", cmd[0]);
         exit(1);
@@ -132,11 +150,12 @@ pid_t execute_command(char** cmd, fd_t in_fd, fd_t out_fd) {
 }
 
 void execute_line(char* line) {
+    // extract commands
     vector_t commands;
     create_vector(&commands, 10);
     split_by_delim(&commands, line, "|");
 
-    // Create all pipes
+    // create all pipes
     vector_t pipes;
     create_vector(&pipes, 10);
 
@@ -145,17 +164,18 @@ void execute_line(char* line) {
 
         if(pipe((int*) p) < 0)
             fprintf(stderr, "Failed to create pipe");
-            
+
         vector_push(&pipes, p);
     }
     
+    // run all processes and store them into a vector
     vector_t processes;
     create_vector(&processes, 10);
 
     for(int i = 0; i < vector_size(&commands); ++i) {
         char* command = (char*) vector_get(&commands, i);
 
-        // Get arguments
+        // get arguments into a vector
         vector_t args;
         create_vector(&args, 10);
         split_by_delim(&args, command, " ");
@@ -164,6 +184,7 @@ void execute_line(char* line) {
         fd_t in_fd = -1;
         fd_t out_fd = -1; 
 
+        // check for pipes
         if(i > 0) {
             pipe_t p = *((pipe_t*) vector_get(&pipes, i - 1));
             in_fd = p.read;
@@ -174,6 +195,7 @@ void execute_line(char* line) {
             out_fd = p.write;
         }
 
+        // execute command and save child process id
         pid_t* id = (pid_t*) malloc(sizeof(pid_t));
         *id = execute_command((char**) args.items, in_fd, out_fd);
         vector_push(&processes, id);
@@ -188,7 +210,7 @@ void execute_line(char* line) {
         free_vector(&args);
     }
 
-    // Wait child process to exit
+    // wait child process to exit
     for(int i = 0; i < vector_size(&processes); ++i) {
         pid_t* id = (pid_t*) vector_get(&processes, i);
 
@@ -202,6 +224,7 @@ void execute_line(char* line) {
             fprintf(stderr, "Child processes terminated abnormally\n");
     }
 
+    // cleanup
     free_vector_content(&processes);
     free_vector(&processes);
 
