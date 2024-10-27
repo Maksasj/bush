@@ -4,16 +4,16 @@
 
 [x] Parašykite savo kodą C programavimo kalba.
 [x] Į kodą įtraukite pakankamai komentarų, kad būtų aiškiau ir paaiškintumėte savo logiką bei požiūrį.
-[ ] Įsitikinkite, kad kodas gali veikti universiteto Linux kompiuteryje.
+[x] Įsitikinkite, kad kodas gali veikti universiteto Linux kompiuteryje.
 [x] Sukurkite funkcinį Makefile savo programai ir įsitikinkite, kad kodas gali būti sukompiliuotas naudojant jį.
-[ ] Paleidę programą, parodykite vartotojui kviečiantį pranešimą.
+[x] Paleidę programą, parodykite vartotojui kviečiantį pranešimą.
 [x] Programa turi priimti ir apdoroti vartotojo komandas.
 [x] Programa baigiama vienu iš šių būdų:
-  [ ] Gavęs EOF (failo pabaiga).
+  [x] Gavęs EOF (failo pabaiga).
   [x] Gavęs iš vartotojo komandą "exit".
 [x] Nenaudokite `system(3)` funkcijos komandoms vykdyti.
 [x] Naudojant tik standartines Unix API funkcijas, tokias kaip `fork(2)`, `execv(2)`, `exit(2)`, ...
-[ ] Procesų valdymui nenaudoti išorinių bibliotekų.
+[x] Procesų valdymui nenaudoti išorinių bibliotekų.
 [x] Pasirinkite vieną iš šių reikalavimų:
   [x] konvejeriai
 

@@ -43,6 +43,10 @@ int main(int argc, char *argv[]) {
     
     if(argc >= 2)
         stream = fopen(argv[1], "r");
+    else {
+        printf("bush shell 1.0\n");
+        printf("enter your commands (exit or '^D' if you want to exit): \n");
+    }
 
     if(stream == NULL) {
         fprintf(stderr, "ERROR: Failed to open '%s' file\n", argv[1]);
@@ -57,10 +61,10 @@ int main(int argc, char *argv[]) {
     while (1) {
         // if we running in terminal lets have '$' sign as our keyword
         if(stream == stdin)
-            printf("$ ");
+            printf("\e[0;35mbush$\e[0m ");
         
         // get line from stream
-        if((read = getline(&line, &size, stream)) == -1)
+        if((read = getline(&line, &size, stream)) == -1) // if EOF then returned value is -1 and we break
             break;
 
         // process and execute line
